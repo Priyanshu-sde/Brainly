@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { ContentModel, LinkModel, UserModel } from "./db";
 import { JWT_PASSWORD } from "./config";
 import { userMiddleware } from "./middlewares";
-import { random } from "./utils";
+import { random as GetRand} from "./utils";
 
 const app = express();
 app.use(express.json());
@@ -56,22 +56,29 @@ app.post("/api/v1/signin", async (req,res) => {
     }
 })
 
-app.post("/api/v1/content", async (req,res) => {
+app.post("/api/v1/content", userMiddleware, async (req,res) => {
     const title = req.body.title;
     const link = req.body.link;
     const tags = req.body.tags;
-    const userId = req.body.userId;
+    //@ts-ignore
+    const userId = req.userId;
 
     try{
         await ContentModel.create({
-            //@ts-ignore
             title: title,
             links: link,
-            tags:tags
+            tags:tags,
+            userId: userId
+        })
+
+        res.status(200).json({
+            message: "Content Added"
         })
     }catch(e){
+        console.log(e);
         res.status(411).json({
-            message: "Failed"
+            
+            message: "Failed to create"
         })
     }
 
@@ -104,15 +111,39 @@ app.delete("/api/v1/content", userMiddleware, async (req, res) => {
 
 app.post("/api/v1/brain/share",userMiddleware, async (req,res) => {
     const share = req.body.share;
+    
     if (share) {
-        LinkModel.create({
+        const existingLink = await LinkModel.findOne({
+            //@ts-ignore
+            userId: req.userId
+        })
+
+        if(existingLink) {
+            res.json({
+                hash: existingLink.hash
+            })
+            return;
+        }
+
+        const hash = GetRand(10);
+        await LinkModel.create({
+            //@ts-ignore
             userId: req.userId,
-            hash: random(10)
-        }) 
+            hash: hash
+        })
+
+        res.json({
+            hash
+        })
     } else{
         await LinkModel.deleteOne({
+            //@ts-ignore
             userId: req.userId
         });
+
+        res.json({
+            message: "Removed link"
+        })
     }
 })
 
@@ -133,10 +164,19 @@ app.get("/api/v1/brain/:shareLink", async (req,res) => {
     const content = await ContentModel.findOne({
         userId: link.userId
     })
+    console.log(link)
 
-    const user = await UserModel.findOne(
-        userId: link.userId
-    );
+    const user = await UserModel.findOne({
+        _id: link.userId
+    })
+
+    if(user) {
+        res.status(411).json({
+            message: "user not found, error should ideally not happen"
+        })
+
+        return;
+    }
 })
 
 app.listen(3000);
